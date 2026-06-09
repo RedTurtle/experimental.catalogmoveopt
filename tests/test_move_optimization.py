@@ -161,9 +161,11 @@ class TestOnlyContextAwareIndexesReindexed:
             reindex_calls.append(list(idxs or []))
             return original(obj, idxs=idxs, update_metadata=update_metadata)
 
-        with patch.object(catalog, "reindexObject", capturing_reindex):
-            with plone.api.env.adopt_roles(["Manager"]):
-                plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+        with (
+            patch.object(catalog, "reindexObject", capturing_reindex),
+            plone.api.env.adopt_roles(["Manager"]),
+        ):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
 
         # The optimized path should call reindexObject exactly once with the
         # context-aware indexes only (path, getId, id, allowedRolesAndUsers).
@@ -189,8 +191,8 @@ class TestFallbackOnNoOid:
         will_be_moved = MagicMock(spec=IObjectWillBeMovedEvent)
         will_be_moved.oldParent = MagicMock()
         will_be_moved.newParent = MagicMock()
-        IObjectWillBeMovedEvent.providedBy = lambda e: e is will_be_moved  # noqa: E731
-        IObjectMovedEvent.providedBy = lambda e: False  # noqa: E731
+        IObjectWillBeMovedEvent.providedBy = lambda e: e is will_be_moved
+        IObjectMovedEvent.providedBy = lambda e: False
 
         with (
             patch(

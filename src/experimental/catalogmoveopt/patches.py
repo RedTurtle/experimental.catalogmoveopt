@@ -79,13 +79,43 @@ def _pending_move_paths():
 # ---------------------------------------------------------------------------
 
 
+def _handle_object_moved(ob, event):
+    from Products.CMFCore.interfaces import ICatalogTool
+
+    if event.newParent is None:
+        return
+    oid = getattr(ob, "_p_oid", None)
+    old_path = _pending_move_paths().pop(oid, None) if oid else None
+    if old_path is not None:
+        catalog = queryUtility(ICatalogTool)
+        if catalog is not None:
+            catalog.moveObject(ob, old_path, get_context_aware_indexes())
+            return
+    ob.indexObject()
+
+
+def _handle_object_will_be_moved(ob, event):
+    from Products.CMFCore.interfaces import ICatalogTool
+
+    if event.oldParent is None:
+        return
+    if event.newParent is not None:
+        catalog = queryUtility(ICatalogTool)
+        idxs = get_context_aware_indexes()
+        if catalog is not None and idxs:
+            oid = getattr(ob, "_p_oid", None)
+            if oid is not None:
+                _pending_move_paths()[oid] = "/".join(ob.getPhysicalPath())
+                return  # skip unindexObject; catalog entry preserved
+    ob.unindexObject()
+
+
 def handleContentishEvent(ob, event):
     """Replacement for ``Products.CMFCore.CMFCatalogAware.handleContentishEvent``.
 
     Identical to the original for all event types except true object moves,
     where it uses the optimized ``CatalogTool.moveObject`` path.
     """
-    from Products.CMFCore.interfaces import ICatalogTool
     from Products.CMFCore.interfaces import IWorkflowAware
 
     if IObjectAddedEvent.providedBy(event):
@@ -93,35 +123,13 @@ def handleContentishEvent(ob, event):
         if wfaware is not None:
             wfaware.notifyWorkflowCreated()
         ob.indexObject()
-
     elif IObjectMovedEvent.providedBy(event):
-        if event.newParent is not None:
-            oid = getattr(ob, "_p_oid", None)
-            old_path = _pending_move_paths().pop(oid, None) if oid else None
-            if old_path is not None:
-                catalog = queryUtility(ICatalogTool)
-                if catalog is not None:
-                    idxs = get_context_aware_indexes()
-                    catalog.moveObject(ob, old_path, idxs)
-                    return
-            ob.indexObject()
-
+        _handle_object_moved(ob, event)
     elif IObjectWillBeMovedEvent.providedBy(event):
-        if event.oldParent is not None:
-            if event.newParent is not None:
-                catalog = queryUtility(ICatalogTool)
-                idxs = get_context_aware_indexes()
-                if catalog is not None and idxs:
-                    oid = getattr(ob, "_p_oid", None)
-                    if oid is not None:
-                        _pending_move_paths()[oid] = "/".join(ob.getPhysicalPath())
-                        return  # skip unindexObject; catalog entry preserved
-            ob.unindexObject()
-
+        _handle_object_will_be_moved(ob, event)
     elif IObjectCopiedEvent.providedBy(event):
         if hasattr(aq_base(ob), "workflow_history"):
             del ob.workflow_history
-
     elif IObjectCreatedEvent.providedBy(event):
         if hasattr(aq_base(ob), "addCreator"):
             ob.addCreator()
@@ -132,8 +140,8 @@ def handleContentishEvent(ob, event):
 # ---------------------------------------------------------------------------
 
 
-def _catalog_tool_move_object(self, object, old_path, idxs):
-    """Update the catalog when ``object`` is moved, preserving its RID.
+def _catalog_tool_move_object(self, obj, old_path, idxs):
+    """Update the catalog when ``obj`` is moved, preserving its RID.
 
     Flushes the index queue, remaps the old path to the same RID at the new
     path, and reindexes only ``idxs``.  Injected into ``CatalogTool`` by
@@ -143,14 +151,14 @@ def _catalog_tool_move_object(self, object, old_path, idxs):
 
     getQueue().process()
 
-    new_path = "/".join(object.getPhysicalPath())
+    new_path = "/".join(obj.getPhysicalPath())
     cat = self._catalog
     rid = cat.uids.get(old_path)
 
     if rid is None:
         # Object not yet in catalog (added and moved in the same transaction;
         # INDEX already ran at the new path via queue.process()).
-        self.reindexObject(object, idxs=list(idxs), update_metadata=1)
+        self.reindexObject(obj, idxs=list(idxs), update_metadata=1)
         return
 
     # Remap old path → same RID → new path (preserves RID).
@@ -159,7 +167,7 @@ def _catalog_tool_move_object(self, object, old_path, idxs):
     if old_path in cat.uids:
         del cat.uids[old_path]
 
-    self.reindexObject(object, idxs=list(idxs), update_metadata=1)
+    self.reindexObject(obj, idxs=list(idxs), update_metadata=1)
 
 
 # ---------------------------------------------------------------------------

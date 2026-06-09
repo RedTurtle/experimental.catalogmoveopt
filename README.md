@@ -1,23 +1,4 @@
-<div align="center">
-    <h1 align="center">experimental.catalogmoveopt</h1>
-</div>
-<div align="center">
-[![PyPI](https://img.shields.io/pypi/v/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-[![PyPI - Wheel](https://img.shields.io/pypi/wheel/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-[![PyPI - License](https://img.shields.io/pypi/l/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-[![PyPI - Status](https://img.shields.io/pypi/status/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-
-
-[![PyPI - Plone Versions](https://img.shields.io/pypi/frameworkversions/plone/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
-
-[![CI](https://github.com/RedTurtle/experimental.catalogmoveopt/actions/workflows/main.yml/badge.svg)](https://github.com/RedTurtle/experimental.catalogmoveopt/actions/workflows/main.yml)
-![Code Style](https://img.shields.io/badge/Code%20Style-Black-000000)
-
-[![GitHub contributors](https://img.shields.io/github/contributors/RedTurtle/experimental.catalogmoveopt)](https://github.com/RedTurtle/experimental.catalogmoveopt)
-[![GitHub Repo stars](https://img.shields.io/github/stars/RedTurtle/experimental.catalogmoveopt?style=social)](https://github.com/RedTurtle/experimental.catalogmoveopt)
-
-</div>
+# experimental.catalogmoveopt
 
 Monkey-patches Products.CMFCore to optimize catalog operations on object moves
 
