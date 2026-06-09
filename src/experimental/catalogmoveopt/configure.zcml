@@ -1,0 +1,35 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    i18n_domain="experimental.catalogmoveopt"
+    >
+
+  <include file="dependencies.zcml" />
+
+  <!-- Default context-aware index providers (location + security). -->
+  <utility
+      name="cmf.location"
+      provides=".interfaces.IContextAwareIndexProvider"
+      component=".providers.builtin_location_provider"
+      />
+
+  <utility
+      name="cmf.security"
+      provides=".interfaces.IContextAwareIndexProvider"
+      component=".providers.builtin_security_provider"
+      />
+
+  <!--
+    Apply monkey-patches after all ZCML has been processed.
+
+    IProcessStarting fires once the Zope application object is created and
+    all ZCML configuration is complete, so the original handleContentishEvent
+    subscriber is already registered in the GSM at that point.
+    apply_patches() unregisters it and registers our replacement, and also
+    injects CatalogTool.moveObject which does not exist in stock CMFCore.
+  -->
+  <subscriber
+      for="zope.processlifetime.IProcessStarting"
+      handler=".patches.apply_patches"
+      />
+
+</configure>

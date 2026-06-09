@@ -1,0 +1,6 @@
+<configure xmlns="http://namespaces.zope.org/zope">
+
+  <!-- Ensure CMFCore is loaded before we touch its registrations. -->
+  <include package="Products.CMFCore" />
+
+</configure>

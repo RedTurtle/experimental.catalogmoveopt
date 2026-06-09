@@ -1,0 +1,195 @@
+"""Monkey-patches applied to Products.CMFCore at Zope startup.
+
+Two changes are made:
+
+1. ``handleContentishEvent`` is replaced with a version that, on a true object
+   move, skips the full unindex + reindex cycle and instead calls
+   ``CatalogTool.moveObject`` to remap the catalog RID and reindex only the
+   context-aware indexes.
+
+2. ``CatalogTool.moveObject`` is injected (it does not exist in stock CMFCore).
+
+The replacement is functionally identical to the original for every event type
+except ``IObjectWillBeMovedEvent`` and ``IObjectMovedEvent`` on true moves.
+
+The old path is stored via ``Transaction.set_data`` / ``Transaction.data``
+(keyed by a module-level singleton) rather than a volatile ``_v_`` attribute,
+making it immune to ZODB cache eviction (ghostification) for large subtrees.
+See ``_pending_move_paths()`` for details.
+"""
+
+import transaction
+from Acquisition import aq_base
+from OFS.interfaces import IObjectWillBeMovedEvent
+from zope.component import getGlobalSiteManager
+from zope.component import queryUtility
+from zope.lifecycleevent.interfaces import IObjectAddedEvent
+from zope.lifecycleevent.interfaces import IObjectCopiedEvent
+from zope.lifecycleevent.interfaces import IObjectCreatedEvent
+from zope.lifecycleevent.interfaces import IObjectMovedEvent
+
+from .providers import get_context_aware_indexes
+
+
+# ---------------------------------------------------------------------------
+# Transaction-local registry for in-flight move paths
+# ---------------------------------------------------------------------------
+
+class _MovePathsRegistryKey:
+    """Singleton used as key for ``transaction.set_data`` /
+    ``transaction.data``.
+
+    The ``transaction`` package stores arbitrary per-transaction data via
+    ``Transaction.set_data(ob, value)`` / ``Transaction.data(ob)``, keyed by
+    the identity (``id``) of *ob*.  Using a module-level singleton that is
+    never garbage-collected gives a stable, collision-free key.
+    """
+
+
+_MOVE_PATHS_KEY = _MovePathsRegistryKey()
+
+
+def _pending_move_paths():
+    """Return the transaction-local dict ``{oid: old_path}`` for in-flight
+    moves.
+
+    On ``IObjectWillBeMovedEvent`` each object's current physical path is
+    recorded here, keyed by its ZODB ``_p_oid``.  On ``IObjectMovedEvent``
+    the entry is popped and used to call ``CatalogTool.moveObject``.
+
+    Stored via ``Transaction.set_data`` rather than as a volatile ``_v_``
+    attribute because volatile attributes are discarded on ZODB ghostification.
+    For large subtrees this caused silent fallback to a full reindex for all
+    objects evicted from the cache between the two event phases.
+    Transaction-attached data lives outside the ZODB object graph, is never
+    affected by cache pressure, and is discarded automatically on commit/abort.
+    """
+    txn = transaction.get()
+    try:
+        return txn.data(_MOVE_PATHS_KEY)
+    except KeyError:
+        registry = {}
+        txn.set_data(_MOVE_PATHS_KEY, registry)
+        return registry
+
+
+# ---------------------------------------------------------------------------
+# Replacement event subscriber
+# ---------------------------------------------------------------------------
+
+def handleContentishEvent(ob, event):
+    """Replacement for ``Products.CMFCore.CMFCatalogAware.handleContentishEvent``.
+
+    Identical to the original for all event types except true object moves,
+    where it uses the optimized ``CatalogTool.moveObject`` path.
+    """
+    from Products.CMFCore.interfaces import ICatalogTool
+    from Products.CMFCore.interfaces import IWorkflowAware
+
+    if IObjectAddedEvent.providedBy(event):
+        wfaware = IWorkflowAware(ob, None)
+        if wfaware is not None:
+            wfaware.notifyWorkflowCreated()
+        ob.indexObject()
+
+    elif IObjectMovedEvent.providedBy(event):
+        if event.newParent is not None:
+            oid = getattr(ob, '_p_oid', None)
+            old_path = _pending_move_paths().pop(oid, None) if oid else None
+            if old_path is not None:
+                catalog = queryUtility(ICatalogTool)
+                if catalog is not None:
+                    idxs = get_context_aware_indexes()
+                    catalog.moveObject(ob, old_path, idxs)
+                    return
+            ob.indexObject()
+
+    elif IObjectWillBeMovedEvent.providedBy(event):
+        if event.oldParent is not None:
+            if event.newParent is not None:
+                catalog = queryUtility(ICatalogTool)
+                idxs = get_context_aware_indexes()
+                if catalog is not None and idxs:
+                    oid = getattr(ob, '_p_oid', None)
+                    if oid is not None:
+                        _pending_move_paths()[oid] = '/'.join(
+                            ob.getPhysicalPath())
+                        return  # skip unindexObject; catalog entry preserved
+            ob.unindexObject()
+
+    elif IObjectCopiedEvent.providedBy(event):
+        if hasattr(aq_base(ob), 'workflow_history'):
+            del ob.workflow_history
+
+    elif IObjectCreatedEvent.providedBy(event):
+        if hasattr(aq_base(ob), 'addCreator'):
+            ob.addCreator()
+
+
+# ---------------------------------------------------------------------------
+# CatalogTool.moveObject implementation
+# ---------------------------------------------------------------------------
+
+def _catalog_tool_move_object(self, object, old_path, idxs):
+    """Update the catalog when ``object`` is moved, preserving its RID.
+
+    Flushes the index queue, remaps the old path to the same RID at the new
+    path, and reindexes only ``idxs``.  Injected into ``CatalogTool`` by
+    ``apply_patches()``.
+    """
+    from Products.CMFCore.indexing import getQueue
+
+    getQueue().process()
+
+    new_path = '/'.join(object.getPhysicalPath())
+    cat = self._catalog
+    rid = cat.uids.get(old_path)
+
+    if rid is None:
+        # Object not yet in catalog (added and moved in the same transaction;
+        # INDEX already ran at the new path via queue.process()).
+        self.reindexObject(object, idxs=list(idxs), update_metadata=1)
+        return
+
+    # Remap old path → same RID → new path (preserves RID).
+    cat.uids[new_path] = rid
+    cat.paths[rid] = new_path
+    if old_path in cat.uids:
+        del cat.uids[old_path]
+
+    self.reindexObject(object, idxs=list(idxs), update_metadata=1)
+
+
+# ---------------------------------------------------------------------------
+# Patch application — called from the IProcessStarting subscriber
+# ---------------------------------------------------------------------------
+
+def apply_patches():
+    """Unregister the original ``handleContentishEvent`` and register ours.
+
+    Also injects ``CatalogTool.moveObject`` if not already present.
+
+    Called via the ``IProcessStarting`` subscriber in ``configure.zcml``,
+    after all ZCML has been processed and the original subscriber is already
+    registered in the GSM.
+    """
+    from AccessControl.class_init import InitializeClass
+    from AccessControl.SecurityInfo import ClassSecurityInfo
+    from Products.CMFCore import CMFCatalogAware
+    from Products.CMFCore.CatalogTool import CatalogTool
+    from Products.CMFCore.interfaces import IContentish
+    from zope.lifecycleevent.interfaces import IObjectEvent
+
+    gsm = getGlobalSiteManager()
+
+    gsm.unregisterHandler(
+        CMFCatalogAware.handleContentishEvent,
+        (IContentish, IObjectEvent),
+    )
+    gsm.registerHandler(handleContentishEvent, (IContentish, IObjectEvent))
+
+    if not hasattr(CatalogTool, 'moveObject'):
+        security = ClassSecurityInfo()
+        security.declarePrivate('moveObject')
+        CatalogTool.moveObject = _catalog_tool_move_object
+        InitializeClass(CatalogTool)
