@@ -191,6 +191,11 @@ def apply_patches():
     )
     gsm.registerHandler(handleContentishEvent, (IContentish, IObjectEvent))
 
+    # Keep the module attribute in sync so that a second call to apply_patches()
+    # will find *our* handler (not the original) when calling unregisterHandler,
+    # making this function safely idempotent.
+    CMFCatalogAware.handleContentishEvent = handleContentishEvent
+
     if not hasattr(CatalogTool, "moveObject"):
         security = ClassSecurityInfo()
         security.declarePrivate("moveObject")
