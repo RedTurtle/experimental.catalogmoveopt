@@ -1,15 +1,13 @@
 """Unit tests for get_context_aware_indexes() and IContextAwareIndexProvider."""
 
-import pytest
+from experimental.catalogmoveopt.interfaces import IContextAwareIndexProvider
+from experimental.catalogmoveopt.providers import _BuiltinLocationIndexProvider
+from experimental.catalogmoveopt.providers import _BuiltinSecurityIndexProvider
+from experimental.catalogmoveopt.providers import get_context_aware_indexes
 from zope.component import getGlobalSiteManager
 from zope.interface import implementer
 
-from experimental.catalogmoveopt.interfaces import IContextAwareIndexProvider
-from experimental.catalogmoveopt.providers import (
-    _BuiltinLocationIndexProvider,
-    _BuiltinSecurityIndexProvider,
-    get_context_aware_indexes,
-)
+import pytest
 
 
 @implementer(IContextAwareIndexProvider)
@@ -24,9 +22,7 @@ def clean_gsm():
     yield
     gsm = getGlobalSiteManager()
     for name in ("_test.location", "_test.security", "_test.custom"):
-        gsm.unregisterUtility(
-            provided=IContextAwareIndexProvider, name=name
-        )
+        gsm.unregisterUtility(provided=IContextAwareIndexProvider, name=name)
 
 
 class TestGetContextAwareIndexes:

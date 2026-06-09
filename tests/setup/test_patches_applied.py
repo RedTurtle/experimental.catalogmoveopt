@@ -27,8 +27,8 @@ class TestPatchesApplied:
 
     def test_catalog_tool_has_move_object(self, integration):
         """CatalogTool gained the moveObject method."""
-        from Products.CMFCore.CatalogTool import CatalogTool
         from experimental.catalogmoveopt.patches import _catalog_tool_move_object
+        from Products.CMFCore.CatalogTool import CatalogTool
 
         assert hasattr(CatalogTool, "moveObject")
         assert CatalogTool.moveObject is _catalog_tool_move_object

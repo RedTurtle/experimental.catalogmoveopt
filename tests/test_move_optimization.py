@@ -57,6 +57,7 @@ def _rid(catalog, obj):
 class TestRenamePreservesRid:
     def test_rid_unchanged_after_rename(self, portal, doc, integration):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -71,6 +72,7 @@ class TestRenamePreservesRid:
 
     def test_old_path_removed_after_rename(self, portal, doc, integration):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -83,6 +85,7 @@ class TestRenamePreservesRid:
 
     def test_new_path_findable_after_rename(self, portal, doc, integration):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -97,10 +100,9 @@ class TestRenamePreservesRid:
 
 
 class TestCutPastePreservesRid:
-    def test_rid_unchanged_after_move(
-        self, portal, doc, target_folder, integration
-    ):
+    def test_rid_unchanged_after_move(self, portal, doc, target_folder, integration):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -113,10 +115,9 @@ class TestCutPastePreservesRid:
         new_rid = _rid(catalog, doc)
         assert new_rid == old_rid, "RID must be preserved after cut-paste"
 
-    def test_old_path_removed_after_move(
-        self, portal, doc, target_folder, integration
-    ):
+    def test_old_path_removed_after_move(self, portal, doc, target_folder, integration):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -131,6 +132,7 @@ class TestCutPastePreservesRid:
         self, portal, doc, target_folder, integration
     ):
         from Products.CMFCore.utils import getToolByName
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -143,12 +145,11 @@ class TestCutPastePreservesRid:
 
 
 class TestOnlyContextAwareIndexesReindexed:
-    def test_rename_reindexes_only_declared_indexes(
-        self, portal, doc, integration
-    ):
+    def test_rename_reindexes_only_declared_indexes(self, portal, doc, integration):
         """reindexObject is called with only the context-aware index set."""
-        from unittest.mock import patch
         from Products.CMFCore.utils import getToolByName
+        from unittest.mock import patch
+
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
@@ -173,13 +174,12 @@ class TestOnlyContextAwareIndexesReindexed:
 
 
 class TestFallbackOnNoOid:
-    def test_object_without_oid_falls_back_to_full_reindex(
-        self, portal, integration
-    ):
+    def test_object_without_oid_falls_back_to_full_reindex(self, portal, integration):
         """When an object has no _p_oid the fallback full reindex is used."""
-        from unittest.mock import MagicMock, patch
         from experimental.catalogmoveopt.patches import handleContentishEvent
         from OFS.interfaces import IObjectWillBeMovedEvent
+        from unittest.mock import MagicMock
+        from unittest.mock import patch
         from zope.lifecycleevent.interfaces import IObjectMovedEvent
 
         ob = MagicMock()
@@ -192,17 +192,23 @@ class TestFallbackOnNoOid:
         IObjectWillBeMovedEvent.providedBy = lambda e: e is will_be_moved  # noqa: E731
         IObjectMovedEvent.providedBy = lambda e: False  # noqa: E731
 
-        with patch(
-            "experimental.catalogmoveopt.patches.IObjectWillBeMovedEvent"
-        ) as mock_will, patch(
-            "experimental.catalogmoveopt.patches.IObjectMovedEvent"
-        ) as mock_moved, patch(
-            "experimental.catalogmoveopt.patches.IObjectAddedEvent"
-        ) as mock_added, patch(
-            "experimental.catalogmoveopt.patches.IObjectCopiedEvent"
-        ) as mock_copied, patch(
-            "experimental.catalogmoveopt.patches.IObjectCreatedEvent"
-        ) as mock_created:
+        with (
+            patch(
+                "experimental.catalogmoveopt.patches.IObjectWillBeMovedEvent"
+            ) as mock_will,
+            patch(
+                "experimental.catalogmoveopt.patches.IObjectMovedEvent"
+            ) as mock_moved,
+            patch(
+                "experimental.catalogmoveopt.patches.IObjectAddedEvent"
+            ) as mock_added,
+            patch(
+                "experimental.catalogmoveopt.patches.IObjectCopiedEvent"
+            ) as mock_copied,
+            patch(
+                "experimental.catalogmoveopt.patches.IObjectCreatedEvent"
+            ) as mock_created,
+        ):
             mock_added.providedBy.return_value = False
             mock_moved.providedBy.return_value = False
             mock_will.providedBy.return_value = True
