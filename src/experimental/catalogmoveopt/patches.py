@@ -18,7 +18,7 @@ making it immune to ZODB cache eviction (ghostification) for large subtrees.
 See ``_pending_move_paths()`` for details.
 """
 
-import transaction
+from .providers import get_context_aware_indexes
 from Acquisition import aq_base
 from OFS.interfaces import IObjectWillBeMovedEvent
 from zope.component import getGlobalSiteManager
@@ -28,12 +28,13 @@ from zope.lifecycleevent.interfaces import IObjectCopiedEvent
 from zope.lifecycleevent.interfaces import IObjectCreatedEvent
 from zope.lifecycleevent.interfaces import IObjectMovedEvent
 
-from .providers import get_context_aware_indexes
+import transaction
 
 
 # ---------------------------------------------------------------------------
 # Transaction-local registry for in-flight move paths
 # ---------------------------------------------------------------------------
+
 
 class _MovePathsRegistryKey:
     """Singleton used as key for ``transaction.set_data`` /
@@ -77,6 +78,7 @@ def _pending_move_paths():
 # Replacement event subscriber
 # ---------------------------------------------------------------------------
 
+
 def handleContentishEvent(ob, event):
     """Replacement for ``Products.CMFCore.CMFCatalogAware.handleContentishEvent``.
 
@@ -94,7 +96,7 @@ def handleContentishEvent(ob, event):
 
     elif IObjectMovedEvent.providedBy(event):
         if event.newParent is not None:
-            oid = getattr(ob, '_p_oid', None)
+            oid = getattr(ob, "_p_oid", None)
             old_path = _pending_move_paths().pop(oid, None) if oid else None
             if old_path is not None:
                 catalog = queryUtility(ICatalogTool)
@@ -110,25 +112,25 @@ def handleContentishEvent(ob, event):
                 catalog = queryUtility(ICatalogTool)
                 idxs = get_context_aware_indexes()
                 if catalog is not None and idxs:
-                    oid = getattr(ob, '_p_oid', None)
+                    oid = getattr(ob, "_p_oid", None)
                     if oid is not None:
-                        _pending_move_paths()[oid] = '/'.join(
-                            ob.getPhysicalPath())
+                        _pending_move_paths()[oid] = "/".join(ob.getPhysicalPath())
                         return  # skip unindexObject; catalog entry preserved
             ob.unindexObject()
 
     elif IObjectCopiedEvent.providedBy(event):
-        if hasattr(aq_base(ob), 'workflow_history'):
+        if hasattr(aq_base(ob), "workflow_history"):
             del ob.workflow_history
 
     elif IObjectCreatedEvent.providedBy(event):
-        if hasattr(aq_base(ob), 'addCreator'):
+        if hasattr(aq_base(ob), "addCreator"):
             ob.addCreator()
 
 
 # ---------------------------------------------------------------------------
 # CatalogTool.moveObject implementation
 # ---------------------------------------------------------------------------
+
 
 def _catalog_tool_move_object(self, object, old_path, idxs):
     """Update the catalog when ``object`` is moved, preserving its RID.
@@ -141,7 +143,7 @@ def _catalog_tool_move_object(self, object, old_path, idxs):
 
     getQueue().process()
 
-    new_path = '/'.join(object.getPhysicalPath())
+    new_path = "/".join(object.getPhysicalPath())
     cat = self._catalog
     rid = cat.uids.get(old_path)
 
@@ -163,6 +165,7 @@ def _catalog_tool_move_object(self, object, old_path, idxs):
 # ---------------------------------------------------------------------------
 # Patch application — called from the IProcessStarting subscriber
 # ---------------------------------------------------------------------------
+
 
 def apply_patches():
     """Unregister the original ``handleContentishEvent`` and register ours.
@@ -188,8 +191,8 @@ def apply_patches():
     )
     gsm.registerHandler(handleContentishEvent, (IContentish, IObjectEvent))
 
-    if not hasattr(CatalogTool, 'moveObject'):
+    if not hasattr(CatalogTool, "moveObject"):
         security = ClassSecurityInfo()
-        security.declarePrivate('moveObject')
+        security.declarePrivate("moveObject")
         CatalogTool.moveObject = _catalog_tool_move_object
         InitializeClass(CatalogTool)

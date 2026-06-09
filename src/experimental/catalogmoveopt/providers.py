@@ -1,7 +1,6 @@
+from .interfaces import IContextAwareIndexProvider
 from zope.component import getUtilitiesFor
 from zope.interface import implementer
-
-from .interfaces import IContextAwareIndexProvider
 
 
 @implementer(IContextAwareIndexProvider)
@@ -13,7 +12,7 @@ class _BuiltinLocationIndexProvider:
     """
 
     def getIndexNames(self):
-        return ('path', 'getId', 'id')
+        return ("path", "getId", "id")
 
 
 @implementer(IContextAwareIndexProvider)
@@ -25,7 +24,7 @@ class _BuiltinSecurityIndexProvider:
     """
 
     def getIndexNames(self):
-        return ('allowedRolesAndUsers',)
+        return ("allowedRolesAndUsers",)
 
 
 #: Module-level singletons registered as named utilities in configure.zcml.

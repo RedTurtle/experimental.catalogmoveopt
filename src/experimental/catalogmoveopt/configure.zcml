@@ -7,14 +7,14 @@
 
   <!-- Default context-aware index providers (location + security). -->
   <utility
-      name="cmf.location"
       provides=".interfaces.IContextAwareIndexProvider"
+      name="cmf.location"
       component=".providers.builtin_location_provider"
       />
 
   <utility
-      name="cmf.security"
       provides=".interfaces.IContextAwareIndexProvider"
+      name="cmf.security"
       component=".providers.builtin_security_provider"
       />
 
