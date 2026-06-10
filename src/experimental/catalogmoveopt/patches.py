@@ -205,7 +205,7 @@ def _registry_chain(registry):
         stack.extend(getattr(reg, "__bases__", ()))
 
 
-def apply_patches():
+def apply_patches(*args):
     """Unregister the original ``handleContentishEvent`` and register ours.
 
     Also injects ``CatalogTool.moveObject`` if not already present.
