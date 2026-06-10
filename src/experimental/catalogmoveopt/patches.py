@@ -175,6 +175,34 @@ def _catalog_tool_move_object(self, obj, old_path, idxs):
 # ---------------------------------------------------------------------------
 
 
+#: The genuine ``CMFCatalogAware.handleContentishEvent`` captured the first time
+#: ``apply_patches()`` runs, before we overwrite the module attribute with ours.
+#: Kept so that subsequent (idempotent) calls can still target the stock handler
+#: for unregistration.
+_stock_handler = None
+
+
+def _registry_chain(registry):
+    """Yield *registry* and all of its transitive bases, each exactly once.
+
+    Subscriber registrations are looked up across the whole base chain, but
+    ``unregisterHandler`` only removes a registration from the registry that
+    holds it directly.  Under the stacked global registries used by
+    ``plone.testing`` the stock handler is registered in a *base* of the current
+    global site manager, so removing it requires walking the chain.  In
+    production the chain is just the single global registry.
+    """
+    seen = []
+    stack = [registry]
+    while stack:
+        reg = stack.pop()
+        if any(reg is s for s in seen):
+            continue
+        seen.append(reg)
+        yield reg
+        stack.extend(getattr(reg, "__bases__", ()))
+
+
 def apply_patches():
     """Unregister the original ``handleContentishEvent`` and register ours.
 
@@ -184,19 +212,34 @@ def apply_patches():
     after all ZCML has been processed and the original subscriber is already
     registered in the GSM.
     """
+    global _stock_handler
+
     from AccessControl.class_init import InitializeClass
     from AccessControl.SecurityInfo import ClassSecurityInfo
     from Products.CMFCore import CMFCatalogAware
     from Products.CMFCore.CatalogTool import CatalogTool
     from Products.CMFCore.interfaces import IContentish
-    from zope.lifecycleevent.interfaces import IObjectEvent
+    from zope.interface.interfaces import IObjectEvent
+
+    current = CMFCatalogAware.handleContentishEvent
+    if current is not handleContentishEvent:
+        # First time we patch (or someone restored the stock handler): remember
+        # the genuine stock callable so we can keep removing it on later calls.
+        _stock_handler = current
 
     gsm = getGlobalSiteManager()
 
-    gsm.unregisterHandler(
-        CMFCatalogAware.handleContentishEvent,
-        (IContentish, IObjectEvent),
-    )
+    # Remove the stock handler (and any stale copy of ours) from every registry
+    # in the lookup chain, then register ours exactly once in the current GSM.
+    # Walking the chain is required because under plone.testing's stacked global
+    # registries the stock handler lives in a base, where a plain
+    # ``gsm.unregisterHandler`` would never find it — leaving both handlers
+    # active and causing a full reindex (RID churn) on every move.
+    targets = [t for t in (_stock_handler, handleContentishEvent) if t is not None]
+    for reg in _registry_chain(gsm):
+        for target in targets:
+            reg.unregisterHandler(target, (IContentish, IObjectEvent))
+
     gsm.registerHandler(handleContentishEvent, (IContentish, IObjectEvent))
 
     # Keep the module attribute in sync so that a second call to apply_patches()
