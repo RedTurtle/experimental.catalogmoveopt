@@ -5,7 +5,7 @@
 
   <include file="dependencies.zcml" />
 
-  <!-- Default context-aware index providers (location + security). -->
+  <!-- Default context-aware index providers (location + security + temporal). -->
   <utility
       provides=".interfaces.IContextAwareIndexProvider"
       name="cmf.location"
@@ -16,6 +16,12 @@
       provides=".interfaces.IContextAwareIndexProvider"
       name="cmf.security"
       component=".providers.builtin_security_provider"
+      />
+
+  <utility
+      provides=".interfaces.IContextAwareIndexProvider"
+      name="cmf.temporal"
+      component=".providers.builtin_temporal_provider"
       />
 
   <!--

@@ -179,8 +179,10 @@ class TestOnlyContextAwareIndexesReindexed:
             plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
 
         # The optimized move handler must reindex exactly the context-aware
-        # index set (path, getId, id, allowedRolesAndUsers) and nothing more.
-        expected = frozenset(("path", "getId", "id", "allowedRolesAndUsers"))
+        # index set and nothing more.
+        expected = frozenset(
+            ("path", "getId", "id", "allowedRolesAndUsers", "modified", "Date")
+        )
         assert expected in reindex_calls, (
             f"move handler must reindex the context-aware set; got {reindex_calls}"
         )

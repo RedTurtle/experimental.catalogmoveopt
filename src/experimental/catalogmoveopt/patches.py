@@ -89,6 +89,8 @@ def _handle_object_moved(ob, event):
     if old_path is not None:
         catalog = queryUtility(ICatalogTool)
         if catalog is not None:
+            if hasattr(aq_base(ob), "notifyModified"):
+                ob.notifyModified()
             catalog.moveObject(ob, old_path, get_context_aware_indexes())
             return
     ob.indexObject()
