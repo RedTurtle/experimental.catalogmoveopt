@@ -180,9 +180,14 @@ class TestOnlyContextAwareIndexesReindexed:
 
         # The optimized move handler must reindex exactly the context-aware
         # index set and nothing more.
-        expected = frozenset(
-            ("path", "getId", "id", "allowedRolesAndUsers", "modified", "Date")
-        )
+        expected = frozenset((
+            "path",
+            "getId",
+            "id",
+            "allowedRolesAndUsers",
+            "modified",
+            "Date",
+        ))
         assert expected in reindex_calls, (
             f"move handler must reindex the context-aware set; got {reindex_calls}"
         )
