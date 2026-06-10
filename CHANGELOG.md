@@ -9,6 +9,13 @@
 
 <!-- towncrier release notes start -->
 
+## 1.0.0a1 (2026-06-10)
+
+
+### Bug fixes:
+
+- add args to subscriber IProcessStarting 
+
 ## 1.0.0a0 (2026-06-10)
 
 
