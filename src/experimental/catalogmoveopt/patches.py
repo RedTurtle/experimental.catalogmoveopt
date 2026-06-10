@@ -89,6 +89,8 @@ def _handle_object_moved(ob, event):
     if old_path is not None:
         catalog = queryUtility(ICatalogTool)
         if catalog is not None:
+            if hasattr(aq_base(ob), "notifyModified"):
+                ob.notifyModified()
             catalog.moveObject(ob, old_path, get_context_aware_indexes())
             return
     ob.indexObject()
@@ -203,7 +205,7 @@ def _registry_chain(registry):
         stack.extend(getattr(reg, "__bases__", ()))
 
 
-def apply_patches():
+def apply_patches(*args):
     """Unregister the original ``handleContentishEvent`` and register ours.
 
     Also injects ``CatalogTool.moveObject`` if not already present.
