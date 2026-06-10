@@ -143,4 +143,4 @@ add: $(VENV_FOLDER)
 release: $(VENV_FOLDER) ## Create a release
 	@echo "$(GREEN)==> Create a release$(RESET)"
 	@uv pip install -e ".[release]"
-	@uv run fullrelease
+	$(VENV_FOLDER)/bin/fullrelease
