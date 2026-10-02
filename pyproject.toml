@@ -45,6 +45,7 @@ test = [
     "pytest-plone>=1.0.0a2",
 ]
 release = [
+    "twine>=7.0.0",
     "zest.releaser[recommended]",
     "zestreleaser.towncrier",
     "zest.pocompile",
