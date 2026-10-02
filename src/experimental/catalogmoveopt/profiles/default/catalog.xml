@@ -1,6 +1,8 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="utf-8"?>
 <object name="portal_catalog">
-  <property name="contextless_indexes" type="lines">
+  <property name="contextless_indexes"
+            type="lines"
+  >
     <element value="SearchableText" />
   </property>
 </object>

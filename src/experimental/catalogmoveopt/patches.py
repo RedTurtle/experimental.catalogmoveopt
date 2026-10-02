@@ -160,17 +160,17 @@ def handleContentishEvent(ob, event):
 DEFAULT_CONTEXTLESS_INDEXES = ("SearchableText",)
 
 
-def _catalog_tool_move_object(self, object, old_path):
-    """Update the catalog when ``object`` is moved, preserving its RID.
+def _catalog_tool_move_object(self, obj, old_path):
+    """Update the catalog when ``obj`` is moved, preserving its RID.
 
-    Updates the modification date of the object, remaps the catalog entry at
-    ``old_path`` to the object's new path, then reindexes all indexes except
-    the ones listed in the optional ``contextless_indexes`` property (default:
-``SearchableText`` when the property does not exist).
+        Updates the modification date of the object, remaps the catalog entry at
+        ``old_path`` to the object's new path, then reindexes all indexes except
+        the ones listed in the optional ``contextless_indexes`` property (default:
+    ``SearchableText`` when the property does not exist).
 
-    Returns False, leaving the catalog and the object untouched, if
-    ``old_path`` is not cataloged.  Injected into ``CatalogTool`` by
-    ``apply_patches()``.
+        Returns False, leaving the catalog and the object untouched, if
+        ``old_path`` is not cataloged.  Injected into ``CatalogTool`` by
+        ``apply_patches()``.
     """
     cat = self._catalog
     rid = cat.uids.get(old_path)
@@ -182,10 +182,10 @@ def _catalog_tool_move_object(self, object, old_path):
     # reindexObject(idxs=[]).  Keep that behavior: HTTP caches and ETags built
     # on the modification date must be invalidated when the URL of the object
     # changes.
-    if hasattr(aq_base(object), "notifyModified"):
-        object.notifyModified()
+    if hasattr(aq_base(obj), "notifyModified"):
+        obj.notifyModified()
 
-    new_path = "/".join(object.getPhysicalPath())
+    new_path = "/".join(obj.getPhysicalPath())
     stale_rid = cat.uids.get(new_path)
     if stale_rid is not None and stale_rid != rid:
         # Drop a leftover entry at the new path, or its RID would be orphaned
@@ -205,7 +205,7 @@ def _catalog_tool_move_object(self, object, old_path):
     idxs = [i for i in self.indexes() if i not in contextless]
     if idxs:
         # An empty list would mean "all indexes".
-        self.reindexObject(object, idxs=idxs, update_metadata=1)
+        self.reindexObject(obj, idxs=idxs, update_metadata=1)
     return True
 
 
