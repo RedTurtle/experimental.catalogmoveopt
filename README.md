@@ -30,8 +30,8 @@ On a true object move (old parent ≠ new parent, i.e. cut-paste):
    updates the modification date, then calls `reindexObject()` with **all
    indexes except the contextless ones** (see below).
 
-The net result: the RID is preserved, and the indexes listed as contextless
-(typically `SearchableText`) are not recomputed.
+The net result: the RID is preserved, and the contextless indexes
+(`SearchableText` unless configured otherwise) are not recomputed.
 
 For **renames** (same parent, new id) the same path is followed — the object
 stays in the same container, only its path and id change.
@@ -51,15 +51,16 @@ discarded automatically on commit or abort.
 
 ### Contextless indexes
 
-By default every index is reindexed on move, so nothing goes stale; the gain
-over stock CMFCore is that the catalog entry is remapped (RID preserved)
-instead of being unindexed and indexed again.
+The catalog entry is remapped on move (RID preserved) instead of being
+unindexed and indexed again.  Every index is then reindexed, except the
+*contextless* ones: indexes whose value does not depend on the object's
+location or security context.  They are listed in the optional
+`contextless_indexes` lines property of `portal_catalog`.
 
-Indexes whose value does not depend on the object's location or security
-context can be skipped by listing them in the optional `contextless_indexes`
-lines property of `portal_catalog`.  `SearchableText`, where most of the cost
-is, is the typical candidate.  The property can be set from a GenericSetup
-`catalog.xml`:
+**Without the property, `SearchableText` is treated as contextless**, where
+most of the cost is.  This differs from upstream CMFCore#161, which reindexes
+every index when the property is missing.  The property can be set from a
+GenericSetup `catalog.xml`:
 
 ```xml
 <object name="portal_catalog">
@@ -69,9 +70,9 @@ is, is the typical candidate.  The property can be set from a GenericSetup
 </object>
 ```
 
-If the property does not exist, `SearchableText` is skipped by default, so no
-profile is needed.  Set the property to an empty list to opt out and reindex
-every index on move.
+Set the property to an empty list to opt out of the default and reindex every
+index on move.  Add other indexes to the list only if their value cannot change
+on move.
 
 An index added later (e.g. through the ZMI) is reindexed on move unless it is
 listed.  Do not list an index if a subscriber changes its value on move.
@@ -102,6 +103,10 @@ dependencies = [
 
 The add-on uses `z3c.autoinclude.plugin` so its ZCML is loaded automatically
 and the optimization is active as soon as the package is installed.
+
+Note that this changes behavior without any further step: `SearchableText` is
+no longer reindexed on move.  To keep reindexing it, set `contextless_indexes`
+to an empty list (see above) or install the `uninstall` profile below.
 
 No profile is required: when `portal_catalog` has no `contextless_indexes`
 property, `SearchableText` is skipped on move.  Installing the
