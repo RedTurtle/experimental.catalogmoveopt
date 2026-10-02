@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<object name="portal_catalog">
+  <!-- An empty property opts out of the default: all indexes are reindexed. -->
+  <property name="contextless_indexes"
+            type="lines"
+  />
+</object>

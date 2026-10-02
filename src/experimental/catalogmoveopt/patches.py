@@ -4,13 +4,16 @@ Two changes are made:
 
 1. ``handleContentishEvent`` is replaced with a version that, on a true object
    move, skips the full unindex + reindex cycle and instead calls
-   ``CatalogTool.moveObject`` to remap the catalog RID and reindex only the
-   context-aware indexes.
+   ``CatalogTool.moveObject`` to remap the catalog RID and reindex all
+   indexes except the ones listed in the ``contextless_indexes`` property of
+   ``portal_catalog``.
 
 2. ``CatalogTool.moveObject`` is injected (it does not exist in stock CMFCore).
 
 The replacement is functionally identical to the original for every event type
 except ``IObjectWillBeMovedEvent`` and ``IObjectMovedEvent`` on true moves.
+Catalog tools that do not provide ``moveObject`` keep the stock unindex +
+index behavior.
 
 The old path is stored via ``Transaction.set_data`` / ``Transaction.data``
 (keyed by a module-level singleton) rather than a volatile ``_v_`` attribute,
@@ -18,7 +21,6 @@ making it immune to ZODB cache eviction (ghostification) for large subtrees.
 See ``_pending_move_paths()`` for details.
 """
 
-from .providers import get_context_aware_indexes
 from Acquisition import aq_base
 from OFS.interfaces import IObjectWillBeMovedEvent
 from zope.component import getGlobalSiteManager
@@ -87,28 +89,39 @@ def _handle_object_moved(ob, event):
     oid = getattr(ob, "_p_oid", None)
     old_path = _pending_move_paths().pop(oid, None) if oid else None
     if old_path is not None:
+        # True move: optimization path, preserve the catalog RID.
         catalog = queryUtility(ICatalogTool)
-        if catalog is not None:
-            if hasattr(aq_base(ob), "notifyModified"):
-                ob.notifyModified()
-            catalog.moveObject(ob, old_path, get_context_aware_indexes())
+        if catalog is not None and catalog.moveObject(ob, old_path):
             return
+        # Not cataloged under the old path: index it like a regular add,
+        # honouring any indexObject override.
     ob.indexObject()
 
 
 def _handle_object_will_be_moved(ob, event):
+    from Products.CMFCore.indexing import processQueue
     from Products.CMFCore.interfaces import ICatalogTool
 
     if event.oldParent is None:
         return
     if event.newParent is not None:
         catalog = queryUtility(ICatalogTool)
-        idxs = get_context_aware_indexes()
-        if catalog is not None and idxs:
-            oid = getattr(ob, "_p_oid", None)
-            if oid is not None:
-                _pending_move_paths()[oid] = "/".join(ob.getPhysicalPath())
-                return  # skip unindexObject; catalog entry preserved
+        oid = getattr(ob, "_p_oid", None)
+        # aq_base: never acquire a moveObject from the catalog's container
+        # (e.g. plone.folder's moveObject(id, position)).
+        if (
+            catalog is not None
+            and oid is not None
+            and getattr(aq_base(catalog), "moveObject", None) is not None
+        ):
+            # Flush the indexing queue while every queued wrapper still
+            # reports the old path.  Processed after the move, a pending
+            # operation would be applied to the new path (rename) or the old
+            # one (cut/paste), creating a second catalog entry next to the
+            # remapped one.
+            processQueue()
+            _pending_move_paths()[oid] = "/".join(ob.getPhysicalPath())
+            return  # skip unindexObject; catalog entry preserved
     ob.unindexObject()
 
 
@@ -142,34 +155,58 @@ def handleContentishEvent(ob, event):
 # ---------------------------------------------------------------------------
 
 
-def _catalog_tool_move_object(self, obj, old_path, idxs):
+#: Indexes skipped on move when ``portal_catalog`` has no
+#: ``contextless_indexes`` property.
+DEFAULT_CONTEXTLESS_INDEXES = ("SearchableText",)
+
+
+def _catalog_tool_move_object(self, obj, old_path):
     """Update the catalog when ``obj`` is moved, preserving its RID.
 
-    Flushes the index queue, remaps the old path to the same RID at the new
-    path, and reindexes only ``idxs``.  Injected into ``CatalogTool`` by
-    ``apply_patches()``.
+        Updates the modification date of the object, remaps the catalog entry at
+        ``old_path`` to the object's new path, then reindexes all indexes except
+        the ones listed in the optional ``contextless_indexes`` property (default:
+    ``SearchableText`` when the property does not exist).
+
+        Returns False, leaving the catalog and the object untouched, if
+        ``old_path`` is not cataloged.  Injected into ``CatalogTool`` by
+        ``apply_patches()``.
     """
-    from Products.CMFCore.indexing import getQueue
-
-    getQueue().process()
-
-    new_path = "/".join(obj.getPhysicalPath())
     cat = self._catalog
     rid = cat.uids.get(old_path)
-
     if rid is None:
-        # Object not yet in catalog (added and moved in the same transaction;
-        # INDEX already ran at the new path via queue.process()).
-        self.reindexObject(obj, idxs=list(idxs), update_metadata=1)
-        return
+        return False
 
-    # Remap old path → same RID → new path (preserves RID).
+    # Without the optimization, CMFPlone updates the modification date as a
+    # side-effect of its indexObject override, which calls
+    # reindexObject(idxs=[]).  Keep that behavior: HTTP caches and ETags built
+    # on the modification date must be invalidated when the URL of the object
+    # changes.
+    if hasattr(aq_base(obj), "notifyModified"):
+        obj.notifyModified()
+
+    new_path = "/".join(obj.getPhysicalPath())
+    stale_rid = cat.uids.get(new_path)
+    if stale_rid is not None and stale_rid != rid:
+        # Drop a leftover entry at the new path, or its RID would be orphaned
+        # by the remap below.
+        self.uncatalog_object(new_path)
+
+    # Remap old path -> same RID -> new path (preserves RID).
     cat.uids[new_path] = rid
     cat.paths[rid] = new_path
-    if old_path in cat.uids:
-        del cat.uids[old_path]
+    del cat.uids[old_path]
 
-    self.reindexObject(obj, idxs=list(idxs), update_metadata=1)
+    # Property missing: default to DEFAULT_CONTEXTLESS_INDEXES.  An existing
+    # but empty property explicitly opts out: all indexes are reindexed.
+    contextless = self.getProperty("contextless_indexes", None)
+    if contextless is None:
+        contextless = DEFAULT_CONTEXTLESS_INDEXES
+    idxs = [i for i in self.indexes() if i not in contextless]
+    if idxs:
+        # An empty list would mean "all indexes".
+        self.reindexObject(obj, idxs=idxs, update_metadata=1)
+    return True
 
 
 # ---------------------------------------------------------------------------
