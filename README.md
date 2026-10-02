@@ -1,5 +1,13 @@
 # experimental.catalogmoveopt
 
+[![PyPI](https://img.shields.io/pypi/v/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
+[![Python versions](https://img.shields.io/pypi/pyversions/experimental.catalogmoveopt)](https://pypi.org/project/experimental.catalogmoveopt/)
+[![Plone](https://img.shields.io/badge/Plone-6.0%20%7C%206.1%20%7C%206.2-0083be)](https://plone.org/)
+[![License](https://img.shields.io/pypi/l/experimental.catalogmoveopt)](LICENSE.GPL)
+[![Main CI](https://github.com/RedTurtle/experimental.catalogmoveopt/actions/workflows/main.yml/badge.svg)](https://github.com/RedTurtle/experimental.catalogmoveopt/actions/workflows/main.yml)
+[![GitHub issues](https://img.shields.io/github/issues/RedTurtle/experimental.catalogmoveopt)](https://github.com/RedTurtle/experimental.catalogmoveopt/issues)
+[![GitHub last commit](https://img.shields.io/github/last-commit/RedTurtle/experimental.catalogmoveopt)](https://github.com/RedTurtle/experimental.catalogmoveopt/commits/main)
+
 Plone add-on that optimizes catalog operations when content is moved or renamed,
 preserving Record IDs (RIDs) and reindexing only the indexes that actually change.
 
