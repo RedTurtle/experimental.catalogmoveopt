@@ -147,57 +147,168 @@ class TestCutPastePreservesRid:
         assert catalog._catalog.uids.get(new_path) is not None
 
 
-class TestOnlyContextAwareIndexesReindexed:
-    def test_rename_reindexes_only_declared_indexes(self, portal, doc, integration):
-        """reindexObject is called with only the context-aware index set."""
-        from Acquisition import aq_base
+def _capture_reindex(catalog, obj):
+    """Patch context manager helper: record ``idxs`` of reindexes of *obj*."""
+    from Acquisition import aq_base
+    from unittest.mock import patch
+
+    obj_base = aq_base(obj)
+    calls = []
+    original = catalog.reindexObject
+
+    # ``CMFCatalogAware.reindexObject`` forwards a ``uid`` keyword to the
+    # catalog tool, so the wrapper must accept it.  Only calls for the moved
+    # object are recorded (renaming a child also reindexes the container).
+    def capturing_reindex(o, idxs=None, update_metadata=0, uid=None):
+        if aq_base(o) is obj_base:
+            calls.append(frozenset(idxs or ()))
+        return original(o, idxs=idxs, update_metadata=update_metadata, uid=uid)
+
+    return calls, patch.object(catalog, "reindexObject", capturing_reindex)
+
+
+class TestContextlessIndexes:
+    def test_rename_skips_contextless_indexes(self, portal, doc, integration):
+        """With the profile installed, SearchableText is not reindexed."""
         from Products.CMFCore.utils import getToolByName
-        from unittest.mock import patch
 
         import plone.api
 
         catalog = getToolByName(portal, "portal_catalog")
-        doc_path_base = aq_base(doc)
-        reindex_calls = []
+        calls, patcher = _capture_reindex(catalog, doc)
 
-        original = catalog.reindexObject
-
-        # ``CMFCatalogAware.reindexObject`` forwards a ``uid`` keyword to the
-        # catalog tool, so the wrapper must accept it.  We only record calls for
-        # the moved object itself (renaming a child also reindexes the container
-        # folder via a ContainerModifiedEvent — standard Plone behaviour that is
-        # unrelated to the move optimization).
-        def capturing_reindex(obj, idxs=None, update_metadata=0, uid=None):
-            if aq_base(obj) is doc_path_base:
-                reindex_calls.append(frozenset(idxs or ()))
-            return original(obj, idxs=idxs, update_metadata=update_metadata, uid=uid)
-
-        with (
-            patch.object(catalog, "reindexObject", capturing_reindex),
-            plone.api.env.adopt_roles(["Manager"]),
-        ):
+        with patcher, plone.api.env.adopt_roles(["Manager"]):
             plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
 
-        # The optimized move handler must reindex exactly the context-aware
-        # index set and nothing more.
-        expected = frozenset((
-            "path",
-            "getId",
-            "id",
-            "allowedRolesAndUsers",
-            "modified",
-            "Date",
-        ))
-        assert expected in reindex_calls, (
-            f"move handler must reindex the context-aware set; got {reindex_calls}"
-        )
-        # Crucially it must never trigger a full reindex of the object (empty
-        # idxs == all indexes) — that is precisely the expensive operation the
-        # optimization exists to avoid.  Any other reindex (e.g. the ordering
-        # support's single getObjPositionInParent reindex) is targeted, not full.
-        assert all(reindex_calls), (
-            f"move must not full-reindex the object; got {reindex_calls}"
-        )
+        moved = [c for c in calls if "SearchableText" not in c and "path" in c]
+        assert moved, f"move must reindex all but contextless indexes; got {calls}"
+        assert frozenset(catalog.indexes()) - moved[0] == {"SearchableText"}
+        # Never a full reindex (empty idxs == all indexes).
+        assert all(calls), f"move must not full-reindex the object; got {calls}"
+
+    def test_rename_skips_default_without_property(self, portal, doc, integration):
+        """Without the property (no profile) SearchableText is still skipped."""
+        from Products.CMFCore.utils import getToolByName
+
+        import plone.api
+
+        catalog = getToolByName(portal, "portal_catalog")
+        catalog.manage_delProperties(["contextless_indexes"])
+        calls, patcher = _capture_reindex(catalog, doc)
+
+        with patcher, plone.api.env.adopt_roles(["Manager"]):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+
+        assert frozenset(catalog.indexes()) - {"SearchableText"} in calls
+
+    def test_rename_reindexes_all_with_empty_property(self, portal, doc, integration):
+        """An empty ``contextless_indexes`` opts out: every index is reindexed."""
+        from Products.CMFCore.utils import getToolByName
+
+        import plone.api
+
+        catalog = getToolByName(portal, "portal_catalog")
+        catalog.manage_changeProperties(contextless_indexes=[])
+        calls, patcher = _capture_reindex(catalog, doc)
+
+        with patcher, plone.api.env.adopt_roles(["Manager"]):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+
+        assert frozenset(catalog.indexes()) in calls
+
+    def test_skipped_index_keeps_value_on_move(self, portal, doc, integration):
+        from Products.CMFCore.utils import getToolByName
+
+        import plone.api
+
+        from Products.CMFCore.indexing import processQueue
+
+        catalog = getToolByName(portal, "portal_catalog")
+        processQueue()
+        rid = _rid(catalog, doc)
+        index = catalog._catalog.getIndex("SearchableText")
+        # Make the stored value differ from the object's, then move.
+        before = index.getEntryForObject(rid)
+        doc.title = "Changed without reindex"
+
+        with plone.api.env.adopt_roles(["Manager"]):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+
+        assert before
+        assert index.getEntryForObject(rid) == before
+
+    def test_move_updates_modification_date(self, portal, doc, integration):
+        import plone.api
+
+        before = doc.modified()
+
+        with plone.api.env.adopt_roles(["Manager"]):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+
+        assert doc.modified() > before
+
+
+class TestMoveObject:
+    def test_returns_false_when_not_cataloged(self, portal, doc, integration):
+        from Products.CMFCore.utils import getToolByName
+
+        catalog = getToolByName(portal, "portal_catalog")
+        assert catalog.moveObject(doc, "/plone/nowhere") is False
+
+    def test_drops_stale_entry_at_new_path(self, portal, doc, integration):
+        from Products.CMFCore.utils import getToolByName
+
+        catalog = getToolByName(portal, "portal_catalog")
+        new_path = "/".join(doc.getPhysicalPath())
+        old_path = "/plone/old-doc"
+        rid = _rid(catalog, doc)
+        # Pretend doc was cataloged at old_path, with a leftover at new_path.
+        catalog._catalog.uids[old_path] = rid
+        catalog._catalog.uids.pop(new_path)
+        catalog.catalog_object(doc, new_path)
+        stale_rid = catalog._catalog.uids[new_path]
+        assert stale_rid != rid
+
+        assert catalog.moveObject(doc, old_path) is True
+
+        assert catalog._catalog.uids[new_path] == rid
+        assert old_path not in catalog._catalog.uids
+        assert stale_rid not in catalog._catalog.paths
+
+
+class TestFallbackWithoutMoveObject:
+    def test_catalog_without_moveObject_unindexes(self, portal, integration):
+        """Catalogs lacking ``moveObject`` keep the stock unindex + index."""
+        from experimental.catalogmoveopt.patches import handleContentishEvent
+        from OFS.interfaces import IObjectWillBeMovedEvent
+        from Products.CMFCore.interfaces import ICatalogTool
+        from unittest.mock import MagicMock
+        from zope.component import getSiteManager
+        from zope.interface import implementer
+
+        @implementer(ICatalogTool)
+        class NoMoveCatalog:
+            pass
+
+        sm = getSiteManager()
+        original = sm.getUtility(ICatalogTool)
+        sm.registerUtility(NoMoveCatalog(), ICatalogTool)
+        try:
+            ob = MagicMock()
+            ob._p_oid = b"\x00" * 8
+
+            @implementer(IObjectWillBeMovedEvent)
+            class Event:
+                oldParent = object()
+                newParent = object()
+
+            event = Event()
+
+            handleContentishEvent(ob, event)
+        finally:
+            sm.registerUtility(original, ICatalogTool)
+
+        ob.unindexObject.assert_called_once()
 
 
 class TestFallbackOnNoOid:
@@ -207,7 +318,6 @@ class TestFallbackOnNoOid:
         from OFS.interfaces import IObjectWillBeMovedEvent
         from unittest.mock import MagicMock
         from unittest.mock import patch
-        from zope.lifecycleevent.interfaces import IObjectMovedEvent
 
         ob = MagicMock()
         ob._p_oid = None  # no OID
@@ -216,8 +326,6 @@ class TestFallbackOnNoOid:
         will_be_moved = MagicMock(spec=IObjectWillBeMovedEvent)
         will_be_moved.oldParent = MagicMock()
         will_be_moved.newParent = MagicMock()
-        IObjectWillBeMovedEvent.providedBy = lambda e: e is will_be_moved
-        IObjectMovedEvent.providedBy = lambda e: False
 
         with (
             patch(
@@ -247,3 +355,27 @@ class TestFallbackOnNoOid:
             handleContentishEvent(ob, will_be_moved)
 
         ob.unindexObject.assert_called_once()
+
+
+class TestPendingQueue:
+    def test_rename_with_pending_reindex_leaves_single_entry(
+        self, portal, doc, integration
+    ):
+        """A reindex queued before the rename must not create a second entry."""
+        from Products.CMFCore.indexing import processQueue
+        from Products.CMFCore.utils import getToolByName
+
+        import plone.api
+
+        catalog = getToolByName(portal, "portal_catalog")
+        processQueue()
+        rid = _rid(catalog, doc)
+        doc.reindexObject()  # queued, not yet processed
+
+        with plone.api.env.adopt_roles(["Manager"]):
+            plone.api.content.rename(obj=doc, new_id="test-doc-renamed")
+        processQueue()
+
+        cat = catalog._catalog
+        assert len(cat.uids) == len(cat.paths)
+        assert _rid(catalog, doc) == rid

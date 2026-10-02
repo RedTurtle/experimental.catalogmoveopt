@@ -21,16 +21,17 @@ with an optimized version.
 On a true object move (old parent ≠ new parent, i.e. cut-paste):
 
 1. **`IObjectWillBeMovedEvent`** — instead of calling `unindexObject()`, the
-   object's current physical path is saved in the transaction-local registry
-   keyed by its ZODB `_p_oid`.  The catalog entry is left untouched.
+   indexing queue is flushed (queued objects still report their old path) and
+   the object's current physical path is saved in the transaction-local
+   registry keyed by its ZODB `_p_oid`.  The catalog entry is left untouched.
 2. **`IObjectMovedEvent`** — the saved old path is retrieved, and
    `CatalogTool.moveObject()` (injected by this add-on) is called.  It remaps
    `old_path → same RID → new_path` in the catalog's internal BTree structures,
-   then calls `reindexObject()` with **only the context-aware indexes**.
+   updates the modification date, then calls `reindexObject()` with **all
+   indexes except the contextless ones** (see below).
 
-The net result: the RID is preserved, only the path-dependent and
-security-dependent indexes are recomputed, and the full reindex of expensive
-text/metadata indexes is skipped entirely.
+The net result: the RID is preserved, and the indexes listed as contextless
+(typically `SearchableText`) are not recomputed.
 
 For **renames** (same parent, new id) the same path is followed — the object
 stays in the same container, only its path and id change.
@@ -48,41 +49,44 @@ for large subtrees, objects can be evicted from the ZODB cache between the
 reindex.  Transaction-attached data lives outside the ZODB object graph and is
 discarded automatically on commit or abort.
 
-### Context-aware indexes
+### Contextless indexes
 
-Only indexes whose values change when an object moves need to be reindexed.
-This add-on ships with two built-in providers:
+By default every index is reindexed on move, so nothing goes stale; the gain
+over stock CMFCore is that the catalog entry is remapped (RID preserved)
+instead of being unindexed and indexed again.
 
-| Provider name | Indexes |
-|---|---|
-| `cmf.location` | `path`, `getId`, `id` |
-| `cmf.security` | `allowedRolesAndUsers` |
-
-Third-party packages can contribute additional indexes by registering a named
-utility providing `IContextAwareIndexProvider`:
+Indexes whose value does not depend on the object's location or security
+context can be skipped by listing them in the optional `contextless_indexes`
+lines property of `portal_catalog`.  `SearchableText`, where most of the cost
+is, is the typical candidate.  The property can be set from a GenericSetup
+`catalog.xml`:
 
 ```xml
-<!-- my.package/configure.zcml -->
-<utility
-    provides="experimental.catalogmoveopt.interfaces.IContextAwareIndexProvider"
-    name="my.package.myindex"
-    component=".providers.MyIndexProvider"
-    />
+<object name="portal_catalog">
+  <property name="contextless_indexes" type="lines">
+    <element value="SearchableText" />
+  </property>
+</object>
 ```
 
-```python
-# my.package/providers.py
-from zope.interface import implementer
-from experimental.catalogmoveopt.interfaces import IContextAwareIndexProvider
+If the property does not exist, `SearchableText` is skipped by default, so no
+profile is needed.  Set the property to an empty list to opt out and reindex
+every index on move.
 
-@implementer(IContextAwareIndexProvider)
-class MyIndexProvider:
-    def getIndexNames(self):
-        return ("my_custom_index",)
-```
+An index added later (e.g. through the ZMI) is reindexed on move unless it is
+listed.  Do not list an index if a subscriber changes its value on move.
 
-If no providers are registered the optimization is disabled and the stock
-full-reindex path is used as a safe fallback.
+### Catalogs without `moveObject`
+
+`moveObject(object, old_path)` is optional for `ICatalogTool` implementations.
+If the registered catalog does not provide it (e.g. `plone-pgcatalog`), the
+stock unindex + index flow is used.  `CatalogTool.moveObject` also updates the
+modification date of the moved object, and returns `False` if nothing is
+cataloged under `old_path` (the object is then indexed like a regular add).
+
+Note for `IIndexQueueProcessor` implementations: a move now queues a
+`reindex` at the new path instead of an `unindex` of the old path followed by
+an `index`.
 
 ## Installation
 
@@ -96,9 +100,15 @@ dependencies = [
 ]
 ```
 
-No further configuration is required.  The add-on uses
-`z3c.autoinclude.plugin` so its ZCML is loaded automatically when installed in
-a Plone site.
+The add-on uses `z3c.autoinclude.plugin` so its ZCML is loaded automatically
+and the optimization is active as soon as the package is installed.
+
+No profile is required: when `portal_catalog` has no `contextless_indexes`
+property, `SearchableText` is skipped on move.  Installing the
+`experimental.catalogmoveopt:default` GenericSetup profile makes this explicit
+by setting the property on `portal_catalog`, so it can be edited or exported.
+The `experimental.catalogmoveopt:uninstall` profile sets it to an empty list,
+so all indexes are reindexed on move.
 
 ## Compatibility
 
@@ -135,8 +145,8 @@ way into the Plone/CMFCore ecosystem proper.  Key references:
 
 - **[zopefoundation/Products.CMFCore#161](https://github.com/zopefoundation/Products.CMFCore/pull/161)**
   — the upstream CMFCore pull request (by the author of this package) that
-  proposes adding `CatalogTool.moveObject()` and the `IContextAwareIndexProvider`
-  interface directly to CMFCore.  Once merged, this add-on will become
+  proposes adding `CatalogTool.moveObject()` and the `contextless_indexes`
+  catalog property directly to CMFCore.  Once merged, this add-on will become
   unnecessary.
 
 ## Contribute

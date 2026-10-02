@@ -1,27 +1,25 @@
 <configure
     xmlns="http://namespaces.zope.org/zope"
+    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
     i18n_domain="experimental.catalogmoveopt"
     >
 
   <include file="dependencies.zcml" />
 
-  <!-- Default context-aware index providers (location + security + temporal). -->
-  <utility
-      provides=".interfaces.IContextAwareIndexProvider"
-      name="cmf.location"
-      component=".providers.builtin_location_provider"
+  <genericsetup:registerProfile
+      name="default"
+      title="experimental.catalogmoveopt"
+      description="Skip SearchableText reindexing when content is moved"
+      provides="Products.GenericSetup.interfaces.EXTENSION"
+      directory="profiles/default"
       />
 
-  <utility
-      provides=".interfaces.IContextAwareIndexProvider"
-      name="cmf.security"
-      component=".providers.builtin_security_provider"
-      />
-
-  <utility
-      provides=".interfaces.IContextAwareIndexProvider"
-      name="cmf.temporal"
-      component=".providers.builtin_temporal_provider"
+  <genericsetup:registerProfile
+      name="uninstall"
+      title="experimental.catalogmoveopt: uninstall"
+      description="Restore reindexing of all indexes when content is moved"
+      provides="Products.GenericSetup.interfaces.EXTENSION"
+      directory="profiles/uninstall"
       />
 
   <!--

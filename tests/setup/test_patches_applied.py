@@ -32,3 +32,18 @@ class TestPatchesApplied:
 
         assert hasattr(CatalogTool, "moveObject")
         assert CatalogTool.moveObject is _catalog_tool_move_object
+
+
+class TestProfile:
+    def test_contextless_indexes_installed(self, portal):
+        catalog = portal.portal_catalog
+        assert catalog.getProperty("contextless_indexes") == ("SearchableText",)
+
+    def test_uninstall_empties_property(self, portal):
+        from Products.CMFCore.utils import getToolByName
+
+        setup = getToolByName(portal, "portal_setup")
+        setup.runAllImportStepsFromProfile(
+            "profile-experimental.catalogmoveopt:uninstall"
+        )
+        assert portal.portal_catalog.getProperty("contextless_indexes") == ()

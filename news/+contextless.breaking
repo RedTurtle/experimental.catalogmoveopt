@@ -1,0 +1,5 @@
+Align with the updated upstream Products.CMFCore#161: every index is now reindexed on move, except the ones listed in the `contextless_indexes` property of `portal_catalog`.
+`IContextAwareIndexProvider` and the built-in providers are removed.
+`CatalogTool.moveObject(object, old_path)` no longer takes `idxs`, updates the modification date and returns `True`/`False`.
+The indexing queue is flushed before a move, and a leftover catalog entry at the new path is dropped.
+Catalogs without `moveObject` keep the stock unindex + index behavior.
